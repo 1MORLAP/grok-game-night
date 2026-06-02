@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { 
-  Dice5, Brain, Users, Trophy, Sparkles, Clock, SkipForward, 
+  Dice5, Brain, Users, Trophy, Sparkles, SkipForward, 
   Plus, Minus, RotateCcw, Play, Pause, Star, ExternalLink 
 } from "lucide-react";
 import confetti from "canvas-confetti";
