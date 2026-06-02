@@ -8,7 +8,7 @@ Bowling • Pool Table • Ping Pong • Foosball • Dominoes
 
 ## Features (Current Build)
 
-- **Mandatory name gate** — every device must enter a name before anything else. Cannot be skipped.
+- **Name is optional for access** — the app opens immediately for anyone (defaults to "Guest"). Click your name in the top bar to set or change it at any time. Used for teams, "you" highlights, and admin (Tomasz). No blocking gate.
 - **Admin mode** — only the name `Tomasz` (case-insensitive, punctuation-insensitive) unlocks timer controls and the ability to unlock/edit any locked entry.
 - **Sticky event timer** — shows current phase (ROUND X or BREAK) + big MM:SS countdown. Admin gets inline Start / Pause / Resume / Advance controls.
 - **Round unlocking rules** (exactly as specified):
