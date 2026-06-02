@@ -297,43 +297,7 @@ body {
   border-radius: 999px;
 }
 
-/* Name gate */
-.gate-input {
-  font-family: var(--font-chalk);
-  font-size: 28px;
-  background: transparent;
-  border: none;
-  border-bottom: 4px solid #fff;
-  color: #fff;
-  text-align: center;
-  padding: 8px 4px;
-  width: 100%;
-  max-width: 320px;
-}
-
-.gate-input:focus {
-  outline: none;
-  border-bottom-color: var(--neon-cyan);
-}
-
-.gate-btn {
-  font-family: var(--font-brush);
-  text-transform: uppercase;
-  letter-spacing: 2px;
-  font-size: 18px;
-  padding: 14px 48px;
-  border: 4px solid #fff;
-  background: #fff;
-  color: #111;
-  transition: all 0.1s ease;
-}
-
-.gate-btn:disabled {
-  opacity: 0.3;
-  border-color: #555;
-  background: #222;
-  color: #777;
-}
+/* (gate styles removed — name entry is now optional/non-blocking for open access) */
 
 /* Admin badge */
 .admin-badge {
