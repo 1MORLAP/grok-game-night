@@ -3,18 +3,43 @@
 :root {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-poster: var(--font-poster);
+  --font-brush: var(--font-brush);
+  --font-chalk: var(--font-chalk);
 
-  /* Game Night palette */
-  --bg: #0a0a0f;
-  --card: #111113;
-  --card-border: #27272a;
-  --accent: #a78bfa;
-  --accent2: #67e8f9;
-  --accent3: #f472b6;
-  --success: #4ade80;
-  --warning: #fbbf24;
-  --text: #f4f4f5;
-  --text-muted: #a1a1aa;
+  /* Chalkboard + neon poster palette */
+  --bg: #0f0f0f;
+  --chalk: #1a1a17;
+  --card: #161613;
+  --card-border: #3a3a35;
+  --text: #f5f5f0;
+  --text-muted: #a8a89e;
+  --text-dim: #6b6b64;
+
+  /* Neon brush accents (cycle per game/round) */
+  --neon-cyan: #67f6ff;
+  --neon-lime: #a3ff4d;
+  --neon-magenta: #ff5ce0;
+  --neon-yellow: #ffe24d;
+  --neon-orange: #ff9f40;
+  --neon-white: #f5f5f0;
+}
+
+/* Font stacks */
+.font-poster {
+  font-family: var(--font-poster);
+  font-weight: 400;
+  letter-spacing: -1.5px;
+}
+.font-brush {
+  font-family: var(--font-brush);
+  font-weight: 400;
+  letter-spacing: 0.5px;
+}
+.font-chalk {
+  font-family: var(--font-chalk);
+  font-weight: 600;
+  letter-spacing: 0.2px;
 }
 
 @theme inline {
@@ -28,63 +53,341 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-geist-sans);
+  /* subtle paper grain */
+  background-image:
+    linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px);
+  background-size: 3px 3px;
 }
 
-/* Game Night components */
-.game-card {
+/* ========== CHALKBOARD + POSTER VISUALS ========== */
+
+.chalkboard {
+  background-color: var(--chalk);
+  background-image:
+    linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px),
+    radial-gradient(circle at 20% 25%, rgba(255,255,240,0.018) 0%, transparent 55%),
+    radial-gradient(circle at 80% 70%, rgba(255,255,240,0.01) 0%, transparent 60%);
+  background-size: 3px 3px, 3px 3px, 100% 100%, 100% 100%;
+  border: 1px solid #2a2a25;
+  box-shadow: inset 0 0 80px rgba(0,0,0,0.6);
+}
+
+.poster-title {
+  font-family: var(--font-poster);
+  text-transform: uppercase;
+  letter-spacing: -2px;
+  line-height: 0.9;
+  text-shadow:
+    3px 3px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000,
+    2px 2px 0 #000;
+  color: #fff;
+}
+
+.brush-accent {
+  font-family: var(--font-brush);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.chalk-text {
+  font-family: var(--font-chalk);
+}
+
+/* Distressed block labels */
+.distressed {
+  font-family: var(--font-poster);
+  text-transform: uppercase;
+  letter-spacing: -1px;
+  text-shadow: 1px 1px 0 #000, 2px 2px 0 rgba(0,0,0,0.6);
+}
+
+/* Neon brush accents */
+.neon-cyan { color: var(--neon-cyan); }
+.neon-lime { color: var(--neon-lime); }
+.neon-magenta { color: var(--neon-magenta); }
+.neon-yellow { color: var(--neon-yellow); }
+.neon-orange { color: var(--neon-orange); }
+
+.neon-border-cyan { border-color: var(--neon-cyan); }
+.neon-border-lime { border-color: var(--neon-lime); }
+.neon-border-magenta { border-color: var(--neon-magenta); }
+.neon-border-yellow { border-color: var(--neon-yellow); }
+.neon-border-orange { border-color: var(--neon-orange); }
+
+/* Game-specific neon for the 5 games */
+.game-bowling { --game-neon: var(--neon-cyan); }
+.game-pool { --game-neon: var(--neon-lime); }
+.game-pingpong { --game-neon: var(--neon-magenta); }
+.game-foosball { --game-neon: var(--neon-yellow); }
+.game-dominoes { --game-neon: var(--neon-orange); }
+
+.game-neon {
+  color: var(--game-neon);
+  text-shadow: 0 0 6px color-mix(in srgb, var(--game-neon) 40%, transparent);
+}
+
+/* Poster cards / sections */
+.poster-card {
   background: var(--card);
-  border: 1px solid var(--card-border);
-  transition: transform 0.1s ease, border-color 0.1s ease, box-shadow 0.1s ease;
+  border: 2px solid var(--card-border);
+  transition: border-color 0.1s ease, box-shadow 0.1s ease;
+  position: relative;
 }
 
-.game-card:hover {
-  transform: translateY(-1px);
-  border-color: var(--accent);
-  box-shadow: 0 10px 30px -10px rgb(0 0 0 / 0.3);
+.poster-card::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border: 1px solid rgba(255,255,255,0.06);
+  pointer-events: none;
 }
 
+.poster-card.active {
+  border-color: var(--game-neon);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--game-neon) 30%, transparent);
+}
+
+/* Big slot-machine style round selector */
+.round-slot {
+  font-family: var(--font-poster);
+  font-size: 42px;
+  line-height: 1;
+  padding: 12px 22px;
+  border: 3px solid #3a3a35;
+  background: #111;
+  color: #ddd;
+  transition: all 0.08s ease;
+  user-select: none;
+  text-shadow: 2px 2px 0 #000;
+}
+
+.round-slot.active {
+  border-color: #fff;
+  color: #fff;
+  background: #1f1f1c;
+  box-shadow: 0 0 0 4px rgba(255,255,255,0.08) inset;
+}
+
+.round-slot.locked {
+  opacity: 0.45;
+  filter: grayscale(0.3);
+}
+
+.round-slot.unlocked {
+  border-color: #5a5a52;
+}
+
+/* Game selector buttons - poster style */
 .game-btn {
-  background: var(--accent);
-  color: #111;
-  font-weight: 600;
-  transition: all 0.1s ease;
-}
-
-.game-btn:hover {
-  background: #c4b5fd;
-  transform: translateY(-1px);
-}
-
-.game-btn-secondary {
-  background: transparent;
-  border: 1px solid var(--card-border);
-  color: var(--text);
-  transition: all 0.1s ease;
-}
-
-.game-btn-secondary:hover {
-  background: var(--card);
-  border-color: var(--accent);
-}
-
-.accent {
-  color: var(--accent);
-}
-
-.accent2 {
-  color: var(--accent2);
-}
-
-.accent3 {
-  color: var(--accent3);
-}
-
-.tag {
-  font-size: 10px;
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: #27272a;
-  color: var(--text-muted);
-  font-family: var(--font-geist-mono);
+  font-family: var(--font-brush);
+  text-transform: uppercase;
   letter-spacing: 0.5px;
+  border: 3px solid #3a3a35;
+  background: #161613;
+  color: #ddd;
+  transition: all 0.08s ease;
+  position: relative;
+}
+
+.game-btn.active {
+  color: #fff;
+  border-color: var(--game-neon);
+  background: color-mix(in srgb, var(--game-neon) 8%, #161613);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--game-neon) 50%, transparent);
+}
+
+.game-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Team pickers */
+.player-chip {
+  font-family: var(--font-chalk);
+  background: #222;
+  border: 1px solid #444;
+  padding: 2px 10px 1px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.player-chip.admin {
+  border-color: var(--neon-yellow);
+  background: color-mix(in srgb, var(--neon-yellow) 12%, #222);
+}
+
+/* Score inputs - chalky */
+.score-input {
+  font-family: var(--font-poster);
+  font-size: 28px;
+  background: #0a0a0a;
+  border: 3px solid #3a3a35;
+  color: #fff;
+  text-align: center;
+  width: 92px;
+  padding: 4px 0;
+  line-height: 1;
+}
+
+.score-input:focus {
+  border-color: #fff;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255,255,255,0.1);
+}
+
+.score-input:disabled {
+  opacity: 0.5;
+  background: #111;
+}
+
+/* Sticky timer */
+.timer-bar {
+  background: #0a0a0a;
+  border-bottom: 3px solid #3a3a35;
+  font-family: var(--font-poster);
+  letter-spacing: -1px;
+}
+
+.timer-digit {
+  font-size: 28px;
+  line-height: 1;
+  font-feature-settings: "tnum";
+}
+
+/* Scorecard table */
+.scorecard-table th {
+  font-family: var(--font-brush);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-bottom: 2px solid #3a3a35;
+}
+
+.scorecard-table td {
+  font-family: var(--font-chalk);
+  font-size: 15px;
+  border-bottom: 1px solid #2a2a25;
+}
+
+.leaderboard-row {
+  transition: background 0.08s ease;
+}
+
+.leaderboard-row:hover {
+  background: #1f1f1c;
+}
+
+/* Sound toggle */
+.sound-toggle {
+  font-size: 11px;
+  letter-spacing: 1px;
+  font-family: var(--font-mono);
+  padding: 2px 8px;
+  border: 1px solid #444;
+  border-radius: 999px;
+}
+
+/* Name gate */
+.gate-input {
+  font-family: var(--font-chalk);
+  font-size: 28px;
+  background: transparent;
+  border: none;
+  border-bottom: 4px solid #fff;
+  color: #fff;
+  text-align: center;
+  padding: 8px 4px;
+  width: 100%;
+  max-width: 320px;
+}
+
+.gate-input:focus {
+  outline: none;
+  border-bottom-color: var(--neon-cyan);
+}
+
+.gate-btn {
+  font-family: var(--font-brush);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  font-size: 18px;
+  padding: 14px 48px;
+  border: 4px solid #fff;
+  background: #fff;
+  color: #111;
+  transition: all 0.1s ease;
+}
+
+.gate-btn:disabled {
+  opacity: 0.3;
+  border-color: #555;
+  background: #222;
+  color: #777;
+}
+
+/* Admin badge */
+.admin-badge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 1px;
+  background: var(--neon-yellow);
+  color: #111;
+  padding: 0 5px;
+  border-radius: 2px;
+  font-weight: 700;
+}
+
+/* Round status pills */
+.status-pill {
+  font-size: 10px;
+  padding: 1px 7px 0;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.5px;
+}
+
+.status-active { background: var(--neon-lime); color: #111; }
+.status-break { background: var(--neon-yellow); color: #111; }
+.status-ended { background: #555; color: #ccc; }
+.status-upcoming { background: #333; color: #aaa; }
+
+/* Lock icon treatment */
+.locked-indicator {
+  font-size: 10px;
+  padding: 1px 5px;
+  background: #222;
+  border: 1px solid #555;
+  border-radius: 3px;
+}
+
+/* Scroll area for selectors */
+.selector-scroll {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.selector-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Mobile friendly big tap targets */
+button, .player-chip, .round-slot, .game-btn {
+  touch-action: manipulation;
+}
+
+/* Toast overrides for chalk feel (sonner) */
+[data-sonner-toast] {
+  background: #161613 !important;
+  border: 2px solid #3a3a35 !important;
+  color: #f5f5f0 !important;
+  font-family: var(--font-chalk) !important;
 }

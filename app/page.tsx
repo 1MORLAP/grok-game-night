@@ -1,830 +1,1057 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { 
-  Dice5, Brain, Users, Trophy, Sparkles, SkipForward, 
-  Plus, Minus, RotateCcw, Play, Pause, Star, ExternalLink 
+  Play, Pause, SkipForward, RotateCcw, Plus, X, Unlock, Lock, 
+  Users, Trophy, Info, Volume2, VolumeX 
 } from "lucide-react";
-import confetti from "canvas-confetti";
 import { toast } from "sonner";
 
-// Types
-type GameMode = "picker" | "trivia" | "charades" | "wyr" | "scoreboard" | "custom";
+// ============ TYPES & CONSTANTS ============
 
-interface TriviaQuestion {
-  q: string;
-  options: string[];
-  correct: number;
-  fact?: string;
+type GameId = 'bowling' | 'pool' | 'ping-pong' | 'foosball' | 'dominoes';
+type RoundNum = 1 | 2 | 3 | 4 | 5;
+
+interface MatchEntry {
+  round: RoundNum;
+  game: GameId;
+  teamA: string[];
+  teamB: string[];
+  scoreA: number | null;
+  scoreB: number | null;
+  locked: boolean;
 }
 
-interface WyrQuestion {
-  a: string;
-  b: string;
-}
-
-interface Player {
-  id: number;
-  name: string;
-  score: number;
-}
-
-// Curated game night classics + Grok-flavored
-const GAME_LIBRARY = [
-  { name: "Grok Would You Rather", players: "3+", time: "10m", energy: "any", desc: "Hilarious dilemmas powered by Grok" },
-  { name: "Charades: xAI Edition", players: "4+", time: "15m", energy: "high", desc: "Act out Grok, Grok-isms, and sci-fi absurdity" },
-  { name: "Two Truths and a Grok", players: "3+", time: "12m", energy: "any", desc: "One lie is suspiciously clever" },
-  { name: "Never Have I Ever: AI Edition", players: "4+", time: "10m", energy: "chill", desc: "Tech, sci-fi, and life prompts" },
-  { name: "The Password is Grok", players: "4+", time: "15m", energy: "high", desc: "Taboo-style with forbidden AI words" },
-  { name: "Paper Telephone (Grok twist)", players: "5+", time: "20m", energy: "chill", desc: "Draw + caption chain with Grok captions" },
-  { name: "Grok Roast Circle", players: "4+", time: "15m", energy: "wild", desc: "Loving roasts generated live" },
-  { name: "Most Likely To...", players: "4+", time: "8m", energy: "any", desc: "The group votes — chaos ensues" },
-  { name: "3-Question Interview", players: "3+", time: "12m", energy: "chill", desc: "Rapid deep + silly questions" },
-  { name: "Mafia / Werewolf (Grok Narrator)", players: "6+", time: "30m", energy: "high", desc: "Grok as impartial moderator" },
-  { name: "Codenames: Grok Agents", players: "4+", time: "20m", energy: "high", desc: "Spymasters give one-word clues" },
-  { name: "Human or Grok?", players: "4+", time: "10m", energy: "any", desc: "Guess which answer came from Grok" },
+const GAMES: { id: GameId; label: string; icon: string; neon: string }[] = [
+  { id: 'bowling', label: 'Bowling', icon: '🎳', neon: 'cyan' },
+  { id: 'pool', label: 'Pool Table', icon: '🎱', neon: 'lime' },
+  { id: 'ping-pong', label: 'Ping Pong', icon: '🏓', neon: 'magenta' },
+  { id: 'foosball', label: 'Foosball', icon: '⚽', neon: 'yellow' },
+  { id: 'dominoes', label: 'Dominoes', icon: '🁣', neon: 'orange' },
 ];
 
-const VIBES = ["any", "chill", "high", "wild"] as const;
+const ROUND_LABELS = [1, 2, 3, 4, 5] as const;
+const ROUND_TIME = 25 * 60;
+const BREAK_TIME = 5 * 60;
 
-const CHARADES_CATEGORIES = [
-  "xAI Office Shenanigans",
-  "Grok Hallucinations",
-  "Sci-Fi Movie Moments",
-  "Tech CEO Antics",
-  "Internet Memes 2026",
-  "Absurd Inventions",
+const EVENT_INFO = {
+  title: "GAME NIGHT",
+  date: "SATURDAY JUNE 6, 2026",
+  time: "5:00 PM — 9:00 PM",
+  venue: "THE BOWLING AREA",
+  hosts: "PARAISO BAY & GRAN PARAISO WELLNESS GROUP",
+};
+
+const RULES = [
+  "Five 25-minute rounds. One game per round per team pair.",
+  "5-minute breaks between rounds — hydrate and reset.",
+  "Each round you will be assigned to one of the five stations.",
+  "Play hard, cheer louder, keep it friendly.",
+  "At the end of each round, captains report scores here.",
+  "Have fun. This is for the group.",
 ];
 
-export default function GrokGameNight() {
-  const [mode, setMode] = useState<GameMode>("picker");
-  const [playersCount, setPlayersCount] = useState(5);
-  const [duration, setDuration] = useState(15);
-  const [vibe, setVibe] = useState<(typeof VIBES)[number]>("any");
-  const [pickedGames, setPickedGames] = useState<typeof GAME_LIBRARY>([]);
+// ============ HELPERS ============
 
-  // Trivia state
-  const [triviaQuestions, setTriviaQuestions] = useState<TriviaQuestion[]>([]);
-  const [triviaIndex, setTriviaIndex] = useState(0);
-  const [triviaScore, setTriviaScore] = useState(0);
-  const [triviaRevealed, setTriviaRevealed] = useState(false);
-  const [triviaSelected, setTriviaSelected] = useState<number | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
+function normalizeName(n: string): string {
+  return n.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
 
-  // Charades state
-  const [charadesPrompts, setCharadesPrompts] = useState<string[]>([]);
-  const [charadesIndex, setCharadesIndex] = useState(0);
-  const [charadesTimer, setCharadesTimer] = useState(60);
-  const [charadesRunning, setCharadesRunning] = useState(false);
-  const [charadesCategory, setCharadesCategory] = useState(CHARADES_CATEGORIES[0]);
+function isTomasz(name: string): boolean {
+  return normalizeName(name) === 'tomasz';
+}
 
-  // WYR state
-  const [wyrQuestions, setWyrQuestions] = useState<WyrQuestion[]>([]);
-  const [wyrIndex, setWyrIndex] = useState(0);
-  const [wyrVotes, setWyrVotes] = useState<{ a: number; b: number }>({ a: 0, b: 0 });
+function formatMMSS(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
 
-  // Scoreboard state
-  const [scoreboard, setScoreboard] = useState<Player[]>([
-    { id: 1, name: "Alex", score: 0 },
-    { id: 2, name: "Jordan", score: 0 },
-    { id: 3, name: "Sam", score: 0 },
-  ]);
-  const [newPlayerName, setNewPlayerName] = useState("");
+function getEntryKey(round: RoundNum, game: GameId) {
+  return `${round}-${game}`;
+}
 
-  // Custom generator
-  const [customPrompt, setCustomPrompt] = useState("");
-  const [customResult, setCustomResult] = useState<any>(null);
+function getNeonClass(gameId: GameId) {
+  const g = GAMES.find(x => x.id === gameId)!;
+  return `neon-border-${g.neon} game-${g.id === 'ping-pong' ? 'pingpong' : g.id}`;
+}
 
-  // Load scoreboard from localStorage
+// ============ MAIN COMPONENT ============
+
+export default function ParaisoGameNight() {
+  // --- Gate / Identity ---
+  const [currentName, setCurrentName] = useState<string>("");
+  const [gateName, setGateName] = useState("");
+  const isAdmin = currentName ? isTomasz(currentName) : false;
+
+  // --- Roster (known players for pickers) ---
+  const [roster, setRoster] = useState<string[]>([]);
+
+  // --- Match entries ---
+  const [entries, setEntries] = useState<MatchEntry[]>([]);
+
+  // --- Timer / Round state ---
+  const [currentRound, setCurrentRound] = useState<0 | RoundNum>(0);
+  const [isBreak, setIsBreak] = useState(false);
+  const [timeRemaining, setTimeRemaining] = useState(0);
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [startedRounds, setStartedRounds] = useState<RoundNum[]>([]);
+
+  // --- UI state ---
+  const [view, setView] = useState<'intro' | 'games' | 'scorecard'>('intro');
+  const [selectedRound, setSelectedRound] = useState<RoundNum>(1);
+  const [selectedGame, setSelectedGame] = useState<GameId>('bowling');
+
+  // --- Team builders for current slot (ephemeral until saved) ---
+  const [teamA, setTeamA] = useState<string[]>([]);
+  const [teamB, setTeamB] = useState<string[]>([]);
+  const [scoreA, setScoreA] = useState<number | null>(null);
+  const [scoreB, setScoreB] = useState<number | null>(null);
+
+  // --- Sounds ---
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [audioCtx, setAudioCtx] = useState<AudioContext | null>(null);
+
+  // --- Derived ---
+  const maxStarted = startedRounds.length > 0 ? Math.max(...startedRounds) : 0;
+
+  const canEnterNames = (r: RoundNum) => r === 1 || r <= maxStarted + 1;
+  const canEnterScores = (r: RoundNum) => r <= maxStarted;
+
+  const currentEntry = useMemo(() => {
+    return entries.find(e => e.round === selectedRound && e.game === selectedGame) || null;
+  }, [entries, selectedRound, selectedGame]);
+
+  const isSlotLocked = !!(currentEntry?.locked && !isAdmin);
+  const namesLocked = isSlotLocked;
+  const scoresAllowed = canEnterScores(selectedRound) && (!currentEntry?.locked || isAdmin);
+
+  const totalSlots = 25;
+  const completedSlots = entries.filter(e => e.scoreA != null && e.scoreB != null).length;
+
+  // Leaderboard computation
+  const leaderboard = useMemo(() => {
+    const playerTotals: Record<string, { round: number[]; total: number; games: number }> = {};
+
+    // Seed from roster + any names that appear in entries
+    const allNames = new Set<string>(roster);
+    entries.forEach(e => {
+      e.teamA.forEach(n => allNames.add(n));
+      e.teamB.forEach(n => allNames.add(n));
+    });
+
+    allNames.forEach(name => {
+      playerTotals[name] = { round: [0,0,0,0,0], total: 0, games: 0 };
+    });
+
+    entries.forEach(entry => {
+      const rIdx = entry.round - 1;
+      const hasScores = entry.scoreA != null && entry.scoreB != null;
+      if (!hasScores) return;
+
+      entry.teamA.forEach(name => {
+        if (!playerTotals[name]) playerTotals[name] = { round: [0,0,0,0,0], total: 0, games: 0 };
+        const val = entry.scoreA!;
+        playerTotals[name].round[rIdx] += val;
+        playerTotals[name].total += val;
+        playerTotals[name].games += 1;
+      });
+      entry.teamB.forEach(name => {
+        if (!playerTotals[name]) playerTotals[name] = { round: [0,0,0,0,0], total: 0, games: 0 };
+        const val = entry.scoreB!;
+        playerTotals[name].round[rIdx] += val;
+        playerTotals[name].total += val;
+        playerTotals[name].games += 1;
+      });
+    });
+
+    return Object.entries(playerTotals)
+      .map(([name, data]) => ({ name, ...data }))
+      .sort((a, b) => b.total - a.total);
+  }, [entries, roster]);
+
+  // Round completion (for checkmarks)
+  const roundComplete = (r: RoundNum) => {
+    return GAMES.every(g => {
+      const e = entries.find(x => x.round === r && x.game === g.id);
+      return !!e && e.scoreA != null && e.scoreB != null;
+    });
+  };
+
+  // ============ PERSISTENCE ============
+  const saveAll = useCallback((partial?: any) => {
+    try {
+      if (partial?.roster) localStorage.setItem('gn-roster', JSON.stringify(partial.roster));
+      if (partial?.entries) localStorage.setItem('gn-entries', JSON.stringify(partial.entries));
+      if (partial?.timer) localStorage.setItem('gn-timer', JSON.stringify(partial.timer));
+      if (partial?.sound != null) localStorage.setItem('gn-sound', JSON.stringify(partial.sound));
+      if (partial?.currentName) localStorage.setItem('gn-current-name', partial.currentName);
+    } catch {}
+  }, []);
+
+  // Hydrate on mount
   useEffect(() => {
-    const saved = localStorage.getItem("grok-game-night-scoreboard");
-    if (saved) {
-      try {
-        setScoreboard(JSON.parse(saved));
-      } catch {}
+    try {
+      const savedName = localStorage.getItem('gn-current-name') || "";
+      if (savedName) setCurrentName(savedName);
+
+      const savedRoster = localStorage.getItem('gn-roster');
+      if (savedRoster) setRoster(JSON.parse(savedRoster));
+      else {
+        // Seed a couple for immediate play / testing
+        const seed = ["Tomasz", "Alex", "Jordan", "Sam", "Taylor"];
+        setRoster(seed);
+        localStorage.setItem('gn-roster', JSON.stringify(seed));
+      }
+
+      const savedEntries = localStorage.getItem('gn-entries');
+      if (savedEntries) setEntries(JSON.parse(savedEntries));
+
+      const savedTimer = localStorage.getItem('gn-timer');
+      if (savedTimer) {
+        const t = JSON.parse(savedTimer);
+        setCurrentRound(t.currentRound ?? 0);
+        setIsBreak(!!t.isBreak);
+        setTimeRemaining(t.timeRemaining ?? 0);
+        setTimerRunning(false); // never auto-resume
+        setStartedRounds(t.startedRounds ?? []);
+      }
+
+      const savedSound = localStorage.getItem('gn-sound');
+      if (savedSound !== null) setSoundEnabled(JSON.parse(savedSound));
+    } catch (e) {
+      console.warn('hydrate failed', e);
     }
   }, []);
 
-  // Persist scoreboard
+  // Persist key pieces when they change
   useEffect(() => {
-    localStorage.setItem("grok-game-night-scoreboard", JSON.stringify(scoreboard));
-  }, [scoreboard]);
+    if (currentName) saveAll({ currentName });
+  }, [currentName, saveAll]);
 
-  // Charades timer effect
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (charadesRunning && charadesTimer > 0) {
-      interval = setInterval(() => {
-        setCharadesTimer((t) => {
-          if (t <= 1) {
-            setCharadesRunning(false);
-            confetti({ particleCount: 80, spread: 60, origin: { y: 0.6 } });
-            return 0;
-          }
-          return t - 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [charadesRunning, charadesTimer]);
+    saveAll({ roster });
+  }, [roster, saveAll]);
 
-  // --- Game Logic ---
+  useEffect(() => {
+    saveAll({ entries });
+  }, [entries, saveAll]);
 
-  function pickGames() {
-    let filtered = GAME_LIBRARY.filter((g) => {
-      const pOk = g.players.includes("+") 
-        ? parseInt(g.players) <= playersCount 
-        : true;
-      const tOk = parseInt(g.time) <= duration + 5;
-      const vOk = vibe === "any" || g.energy === vibe || g.energy === "any";
-      return pOk && tOk && vOk;
+  useEffect(() => {
+    saveAll({ 
+      timer: { currentRound, isBreak, timeRemaining, startedRounds }
     });
+  }, [currentRound, isBreak, timeRemaining, startedRounds, saveAll]);
 
-    if (filtered.length === 0) filtered = GAME_LIBRARY;
+  useEffect(() => {
+    saveAll({ sound: soundEnabled });
+  }, [soundEnabled, saveAll]);
 
-    // Shuffle + take 5
-    const shuffled = [...filtered].sort(() => Math.random() - 0.5).slice(0, 5);
-    setPickedGames(shuffled);
-    setMode("picker");
-    toast.success(`Picked ${shuffled.length} games for ${playersCount} players`);
-  }
-
-  function dealRandomGame() {
-    const random = GAME_LIBRARY[Math.floor(Math.random() * GAME_LIBRARY.length)];
-    setPickedGames([random]);
-    setMode("picker");
-    confetti({ particleCount: 120, spread: 70, origin: { y: 0.7 } });
-  }
-
-  // Trivia
-  async function generateTrivia(useGrok = false) {
-    setIsGenerating(true);
-    if (useGrok) {
-      try {
-        const res = await fetch("/api/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: "trivia",
-            params: { count: 6, category: "pop culture, science, tech, and absurd facts" },
-          }),
-        });
-        const json = await res.json();
-        if (json.error) throw new Error(json.error);
-        if (json.data?.questions) {
-          setTriviaQuestions(json.data.questions);
-          resetTriviaState();
-          toast.success("Grok generated fresh trivia!");
-          setIsGenerating(false);
-          return;
+  // ============ TIMER COUNTDOWN ============
+  useEffect(() => {
+    if (!timerRunning || timeRemaining <= 0) return;
+    const id = setInterval(() => {
+      setTimeRemaining(prev => {
+        const next = prev - 1;
+        if (next <= 0) {
+          setTimerRunning(false);
+          // gentle haptic-like feedback
+          playSound('submit');
+          return 0;
         }
-      } catch (e: any) {
-        toast.error(e.message || "Grok generation failed — using local backup");
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [timerRunning, timeRemaining]);
+
+  // ============ SOUNDS (Web Audio) ============
+  function getAudio() {
+    if (!audioCtx) {
+      const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (Ctx) {
+        const ctx = new Ctx();
+        setAudioCtx(ctx);
+        return ctx;
       }
     }
-    // Local fallback generator (always works)
-    const local = generateLocalTrivia();
-    setTriviaQuestions(local);
-    resetTriviaState();
-    setIsGenerating(false);
-    if (!useGrok) toast("Local trivia loaded — add XAI_API_KEY for Grok-powered sets");
+    return audioCtx;
   }
 
-  function generateLocalTrivia(): TriviaQuestion[] {
-    const templates = [
-      { q: "What does Grok stand for in Hitchhiker's Guide?", options: ["A drink", "To understand", "A robot", "A sandwich"], correct: 1, fact: "Grok means 'to understand intuitively'." },
-      { q: "Which company built me?", options: ["OpenAI", "xAI", "Anthropic", "Google DeepMind"], correct: 1 },
-      { q: "In 2025, what was the most viral AI meme format?", options: ["Grok vs Claude rap battles", "Banana for scale", "AI Garfield", "All of the above"], correct: 3 },
-      { q: "What is the ideal number of players for Werewolf?", options: ["3", "5-8", "9-15", "20+"], correct: 2 },
-      { q: "Which game is best played with exactly zero prep?", options: ["Codenames", "Two Truths & a Lie", "Gloomhaven", "D&D 5e"], correct: 1 },
-    ];
-    return [...templates].sort(() => Math.random() - 0.5).slice(0, 5);
-  }
+  function playSound(type: 'tap' | 'tick' | 'submit' | 'scroll') {
+    if (!soundEnabled) return;
+    const ctx = getAudio();
+    if (!ctx) return;
 
-  function resetTriviaState() {
-    setTriviaIndex(0);
-    setTriviaScore(0);
-    setTriviaRevealed(false);
-    setTriviaSelected(null);
-  }
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const filt = ctx.createBiquadFilter();
 
-  function selectTriviaAnswer(idx: number) {
-    if (triviaRevealed) return;
-    setTriviaSelected(idx);
-    setTriviaRevealed(true);
+      if (type === 'tap') {
+        osc.type = 'square';
+        osc.frequency.value = 920;
+        gain.gain.value = 0.22;
+        filt.type = 'lowpass';
+        filt.frequency.value = 1400;
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.08);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.09);
+      } else if (type === 'tick') {
+        osc.type = 'sawtooth';
+        osc.frequency.value = 380 + Math.random() * 40;
+        gain.gain.value = 0.12;
+        filt.type = 'bandpass';
+        filt.frequency.value = 620;
+        filt.Q.value = 4;
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.06);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.07);
+      } else if (type === 'submit') {
+        // two-tone success
+        const o1 = ctx.createOscillator();
+        const g1 = ctx.createGain();
+        o1.type = 'sine'; o1.frequency.value = 680;
+        g1.gain.value = 0.18;
+        g1.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.22);
+        o1.connect(g1); g1.connect(ctx.destination);
+        o1.start(); o1.stop(ctx.currentTime + 0.24);
 
-    const q = triviaQuestions[triviaIndex];
-    const isCorrect = idx === q.correct;
-    if (isCorrect) {
-      setTriviaScore((s) => s + 1);
-      confetti({ particleCount: 60, spread: 50 });
-    }
-  }
-
-  function nextTrivia() {
-    if (triviaIndex < triviaQuestions.length - 1) {
-      setTriviaIndex((i) => i + 1);
-      setTriviaRevealed(false);
-      setTriviaSelected(null);
-    } else {
-      // Finished
-      const pct = Math.round((triviaScore / triviaQuestions.length) * 100);
-      if (pct >= 70) confetti({ particleCount: 200, spread: 90 });
-      toast(`Game over! ${triviaScore}/${triviaQuestions.length} correct (${pct}%)`);
-    }
-  }
-
-  // Charades
-  async function generateCharades(useGrok = false) {
-    setIsGenerating(true);
-    if (useGrok) {
-      try {
-        const res = await fetch("/api/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type: "charades", params: { count: 8, category: charadesCategory } }),
-        });
-        const json = await res.json();
-        if (json.error) throw new Error(json.error);
-        if (json.data?.prompts) {
-          setCharadesPrompts(json.data.prompts);
-          resetCharades();
-          toast.success(`Grok wrote ${json.data.prompts.length} prompts!`);
-          setIsGenerating(false);
-          return;
-        }
-      } catch (e: any) {
-        toast.error(e.message || "Grok failed — local prompts instead");
+        const o2 = ctx.createOscillator();
+        const g2 = ctx.createGain();
+        o2.type = 'sine'; o2.frequency.value = 920;
+        g2.gain.value = 0.15;
+        g2.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.32);
+        o2.connect(g2); g2.connect(ctx.destination);
+        o2.start(ctx.currentTime + 0.06); o2.stop(ctx.currentTime + 0.34);
+        return;
+      } else if (type === 'scroll') {
+        osc.type = 'sine';
+        osc.frequency.value = 240;
+        gain.gain.value = 0.06;
+        filt.type = 'lowpass'; filt.frequency.value = 800;
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.04);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.045);
       }
-    }
-    // Local
-    const localPrompts = [
-      "Grok trying to explain quantum physics to a cat",
-      "Elon Musk discovering the xAI logo is a cat",
-      "An AI writing its resignation letter",
-      "Trying to use Grok to decide what to have for dinner",
-      "A developer explaining their 47 microservices to their mom",
-      "Grok winning at charades but refusing to tell you how",
-    ].sort(() => Math.random() - 0.5).slice(0, 8);
-    setCharadesPrompts(localPrompts);
-    resetCharades();
-    setIsGenerating(false);
+
+      osc.connect(filt);
+      filt.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+    } catch {}
   }
 
-  function resetCharades() {
-    setCharadesIndex(0);
-    setCharadesTimer(60);
-    setCharadesRunning(false);
-  }
-
-  function toggleCharadesTimer() {
-    if (charadesPrompts.length === 0) return;
-    setCharadesRunning(!charadesRunning);
-  }
-
-  function nextCharades() {
-    if (charadesIndex < charadesPrompts.length - 1) {
-      setCharadesIndex((i) => i + 1);
-      setCharadesTimer(60);
-      setCharadesRunning(false);
-    } else {
-      confetti({ particleCount: 150, spread: 80 });
-      toast("Prompt deck finished! Great round.");
-      setCharadesRunning(false);
+  // Throttled scroll tick
+  const lastScrollTick = React.useRef(0);
+  function onScrollTick() {
+    const now = Date.now();
+    if (now - lastScrollTick.current > 140) {
+      lastScrollTick.current = now;
+      playSound('scroll');
     }
   }
 
-  // Would You Rather
-  async function generateWyr(useGrok = false) {
-    setIsGenerating(true);
-    if (useGrok) {
-      try {
-        const res = await fetch("/api/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type: "would-you-rather", params: { count: 6 } }),
-        });
-        const json = await res.json();
-        if (json.error) throw new Error(json.error);
-        if (json.data?.questions) {
-          setWyrQuestions(json.data.questions);
-          setWyrIndex(0);
-          setWyrVotes({ a: 0, b: 0 });
-          toast.success("Fresh dilemmas from Grok");
-          setIsGenerating(false);
-          return;
-        }
-      } catch (e: any) {
-        toast.error("Falling back to local WYR");
-      }
-    }
-    const local = [
-      { a: "Have Grok as your only search engine for a year", b: "Have perfect memory but never be able to use Google again" },
-      { a: "Live in a world where every joke is explained by Grok", b: "Live in a world where Grok only speaks in riddles" },
-      { a: "Be the person who always wins at game night", b: "Be the person who brings the best snacks" },
-    ];
-    setWyrQuestions(local);
-    setWyrIndex(0);
-    setWyrVotes({ a: 0, b: 0 });
-    setIsGenerating(false);
-  }
+  const toggleSound = () => {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    if (next) playSound('tap');
+  };
 
-  function voteWyr(which: "a" | "b") {
-    setWyrVotes((v) => ({ ...v, [which]: v[which] + 1 }));
-    if (wyrIndex < wyrQuestions.length - 1) {
-      setTimeout(() => setWyrIndex((i) => i + 1), 420);
-    } else {
-      confetti({ particleCount: 90, spread: 60 });
-      toast("Debate complete. Democracy wins.");
-    }
-  }
-
-  // Scoreboard
-  function addPlayer() {
-    const name = newPlayerName.trim();
-    if (!name) return;
-    const newP: Player = {
-      id: Date.now(),
-      name,
-      score: 0,
-    };
-    setScoreboard((s) => [...s, newP]);
-    setNewPlayerName("");
-    toast.success(`Added ${name}`);
-  }
-
-  function changeScore(id: number, delta: number) {
-    setScoreboard((s) =>
-      s.map((p) => (p.id === id ? { ...p, score: Math.max(0, p.score + delta) } : p))
-    );
-    if (delta > 0) {
-      confetti({ particleCount: 40, spread: 45, origin: { y: 0.8 } });
-    }
-  }
-
-  function removePlayer(id: number) {
-    setScoreboard((s) => s.filter((p) => p.id !== id));
-  }
-
-  function resetScores() {
-    setScoreboard((s) => s.map((p) => ({ ...p, score: 0 })));
-    toast("Scores reset for a fresh night");
-  }
-
-  function sortPlayers() {
-    setScoreboard((s) => [...s].sort((a, b) => b.score - a.score));
-  }
-
-  // Custom Grok game
-  async function generateCustom() {
-    if (!customPrompt.trim()) {
-      toast.error("Describe the kind of game you want");
+  // ============ NAME GATE ============
+  const submitGate = () => {
+    const name = gateName.trim();
+    if (!name) {
+      toast.error("Please enter your name");
       return;
     }
-    setIsGenerating(true);
-    try {
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "custom",
-          params: { prompt: customPrompt.trim() },
-        }),
-      });
-      const json = await res.json();
-      if (json.error) throw new Error(json.error);
-      setCustomResult(json.data || json);
-      confetti({ particleCount: 70, spread: 55 });
-    } catch (e: any) {
-      toast.error(e.message || "Generation failed");
-    } finally {
-      setIsGenerating(false);
+    const normalized = name;
+    setCurrentName(normalized);
+
+    // add to roster if new
+    if (!roster.includes(normalized)) {
+      const newRoster = [...roster, normalized];
+      setRoster(newRoster);
+      saveAll({ roster: newRoster });
+    }
+
+    playSound('submit');
+    toast.success(`Welcome, ${normalized.split(" ")[0]}!`);
+    setGateName("");
+  };
+
+  if (!currentName) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a] px-6">
+        <div className="w-full max-w-md text-center">
+          <div className="mb-8">
+            <div className="font-brush text-5xl tracking-[3px] text-white mb-1">{EVENT_INFO.title}</div>
+            <div className="font-poster text-[11px] text-[#888] tracking-[4px]">{EVENT_INFO.date}</div>
+          </div>
+
+          <div className="chalkboard p-8 rounded-2xl mb-8">
+            <div className="font-chalk text-2xl mb-6 text-[#ddd]">What is your name?</div>
+            <input
+              value={gateName}
+              onChange={(e) => setGateName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') submitGate(); }}
+              placeholder="Your full name"
+              className="gate-input"
+              autoFocus
+            />
+            <div className="mt-8">
+              <button
+                onClick={submitGate}
+                disabled={!gateName.trim()}
+                className="gate-btn rounded-none active:scale-[0.985]"
+              >
+                ENTER GAME NIGHT
+              </button>
+            </div>
+            <div className="mt-4 text-[10px] text-[#666] font-mono tracking-widest">NO SKIPPING • ONE NAME PER DEVICE</div>
+          </div>
+
+          <div className="text-[10px] text-[#555] font-mono">
+            {EVENT_INFO.hosts}<br />{EVENT_INFO.venue}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ============ DATA MUTATORS ============
+
+  function addToRoster(name: string) {
+    const clean = name.trim();
+    if (!clean || roster.includes(clean)) return;
+    const next = [...roster, clean];
+    setRoster(next);
+    playSound('tap');
+  }
+
+  function togglePlayerToTeam(name: string, team: 'A' | 'B') {
+    if (namesLocked) return;
+
+    const inA = teamA.includes(name);
+    const inB = teamB.includes(name);
+
+    if (team === 'A') {
+      if (inA) {
+        setTeamA(teamA.filter(n => n !== name));
+      } else {
+        setTeamB(teamB.filter(n => n !== name));
+        setTeamA([...teamA, name]);
+        playSound('tick');
+      }
+    } else {
+      if (inB) {
+        setTeamB(teamB.filter(n => n !== name));
+      } else {
+        setTeamA(teamA.filter(n => n !== name));
+        setTeamB([...teamB, name]);
+        playSound('tick');
+      }
     }
   }
 
-  const currentTrivia = triviaQuestions[triviaIndex];
-  const currentCharade = charadesPrompts[charadesIndex];
-  const currentWyr = wyrQuestions[wyrIndex];
+  function removeFromTeam(name: string, team: 'A' | 'B') {
+    if (namesLocked) return;
+    if (team === 'A') setTeamA(teamA.filter(n => n !== name));
+    else setTeamB(teamB.filter(n => n !== name));
+    playSound('tap');
+  }
 
-  const hasApiKey = typeof window !== "undefined" && false; // we detect on server
+  function saveCurrentTeams() {
+    if (!canEnterNames(selectedRound) && !isAdmin) {
+      toast.error("Names for this round are locked until the previous round starts");
+      return;
+    }
+    // Persist the current team selection as an entry (scores may be null)
+    const newEntry: MatchEntry = {
+      round: selectedRound,
+      game: selectedGame,
+      teamA: [...teamA],
+      teamB: [...teamB],
+      scoreA: currentEntry?.scoreA ?? null,
+      scoreB: currentEntry?.scoreB ?? null,
+      locked: currentEntry?.locked ?? false,
+    };
+
+    setEntries(prev => {
+      const without = prev.filter(e => !(e.round === selectedRound && e.game === selectedGame));
+      return [...without, newEntry];
+    });
+    playSound('tap');
+    toast.success("Teams saved for this slot");
+  }
+
+  function submitScores() {
+    if (!canEnterScores(selectedRound)) {
+      toast.error("Scores open when the round starts");
+      return;
+    }
+    if (scoreA == null || scoreB == null) {
+      toast.error("Enter both team scores");
+      return;
+    }
+
+    const finalTeamsA = teamA.length ? teamA : (currentEntry?.teamA ?? []);
+    const finalTeamsB = teamB.length ? teamB : (currentEntry?.teamB ?? []);
+
+    if (finalTeamsA.length === 0 || finalTeamsB.length === 0) {
+      toast.error("Add at least one player to each team");
+      return;
+    }
+
+    const newEntry: MatchEntry = {
+      round: selectedRound,
+      game: selectedGame,
+      teamA: [...finalTeamsA],
+      teamB: [...finalTeamsB],
+      scoreA,
+      scoreB,
+      locked: !isAdmin, // non-admins lock it immediately
+    };
+
+    setEntries(prev => {
+      const without = prev.filter(e => !(e.round === selectedRound && e.game === selectedGame));
+      return [...without, newEntry];
+    });
+
+    playSound('submit');
+    toast.success(`Scores saved — Round ${selectedRound} • ${GAMES.find(g=>g.id===selectedGame)!.label}`);
+
+    // Auto-sync teams if they were pending
+    if (teamA.length === 0 && finalTeamsA.length) setTeamA(finalTeamsA);
+    if (teamB.length === 0 && finalTeamsB.length) setTeamB(finalTeamsB);
+  }
+
+  function unlockEntry() {
+    if (!isAdmin || !currentEntry) return;
+    setEntries(prev => prev.map(e => 
+      (e.round === selectedRound && e.game === selectedGame)
+        ? { ...e, locked: false }
+        : e
+    ));
+    playSound('tap');
+    toast("Entry unlocked — you can edit");
+  }
+
+  function lockEntry() {
+    if (!isAdmin || !currentEntry) return;
+    setEntries(prev => prev.map(e => 
+      (e.round === selectedRound && e.game === selectedGame)
+        ? { ...e, locked: true }
+        : e
+    ));
+    playSound('tap');
+    toast("Entry locked");
+  }
+
+  // Load entry into the form when selection or entries change
+  useEffect(() => {
+    const e = entries.find(x => x.round === selectedRound && x.game === selectedGame);
+    if (e) {
+      setTeamA(e.teamA);
+      setTeamB(e.teamB);
+      setScoreA(e.scoreA);
+      setScoreB(e.scoreB);
+    } else {
+      setTeamA([]);
+      setTeamB([]);
+      setScoreA(null);
+      setScoreB(null);
+    }
+  }, [selectedRound, selectedGame, entries]);
+
+  // ============ TIMER CONTROLS (ADMIN) ============
+  function startRound(round: RoundNum) {
+    setCurrentRound(round);
+    setIsBreak(false);
+    setTimeRemaining(ROUND_TIME);
+    setTimerRunning(true);
+    setStartedRounds(prev => {
+      const next = Array.from(new Set([...prev, round])).sort() as RoundNum[];
+      return next;
+    });
+    playSound('submit');
+    toast.success(`Round ${round} started — 25 minutes`);
+  }
+
+  function toggleTimerRun() {
+    if (currentRound === 0) return;
+    setTimerRunning(r => !r);
+    playSound('tap');
+  }
+
+  function startBreakNow() {
+    if (currentRound === 0) return;
+    setIsBreak(true);
+    setTimeRemaining(BREAK_TIME);
+    setTimerRunning(true);
+    playSound('submit');
+    toast(`Break started after Round ${currentRound}`);
+  }
+
+  function endBreakStartNext() {
+    const next = (currentRound as number) + 1 as RoundNum;
+    if (next > 5) {
+      setCurrentRound(5);
+      setIsBreak(false);
+      setTimeRemaining(0);
+      setTimerRunning(false);
+      toast("Event complete — great night!");
+      return;
+    }
+    startRound(next);
+  }
+
+  function resetPhaseTime() {
+    setTimeRemaining(isBreak ? BREAK_TIME : ROUND_TIME);
+    playSound('tap');
+  }
+
+  // ============ ROUND / GAME SELECTION ============
+  function selectRound(r: RoundNum) {
+    setSelectedRound(r);
+    playSound('tick');
+    // if names not yet unlocked for this round, warn once
+    if (!canEnterNames(r) && !isAdmin) {
+      toast.info(`Round ${r} names unlock after Round ${r-1} starts`);
+    }
+  }
+
+  function selectGame(g: GameId) {
+    setSelectedGame(g);
+    playSound('tick');
+  }
+
+  // Auto-save teams when they change (if names are allowed)
+  useEffect(() => {
+    if (!canEnterNames(selectedRound) && !isAdmin) return;
+    // debounce-ish: only persist if we have a meaningful change vs stored
+    const e = entries.find(x => x.round === selectedRound && x.game === selectedGame);
+    const teamsChanged = 
+      (e?.teamA?.join(',') !== teamA.join(',')) || 
+      (e?.teamB?.join(',') !== teamB.join(','));
+    if (teamsChanged && (teamA.length > 0 || teamB.length > 0 || e)) {
+      // persist silently
+      const newEntry: MatchEntry = {
+        round: selectedRound,
+        game: selectedGame,
+        teamA: [...teamA],
+        teamB: [...teamB],
+        scoreA: e?.scoreA ?? null,
+        scoreB: e?.scoreB ?? null,
+        locked: e?.locked ?? false,
+      };
+      setEntries(prev => {
+        const without = prev.filter(x => !(x.round === selectedRound && x.game === selectedGame));
+        return [...without, newEntry];
+      });
+    }
+  }, [teamA, teamB]); // eslint-disable-line
+
+  // ============ RENDER ============
+
+  const gameInfo = GAMES.find(g => g.id === selectedGame)!;
+  const phaseLabel = currentRound === 0 
+    ? "PRE-EVENT" 
+    : isBreak ? `BREAK (AFTER R${currentRound})` : `ROUND ${currentRound}`;
+  const timerColor = isBreak ? "neon-yellow" : "neon-lime";
 
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* Header */}
-      <header className="border-b border-zinc-800 bg-zinc-950/80 backdrop-blur sticky top-0 z-50">
-        <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-400 via-fuchsia-400 to-cyan-400 flex items-center justify-center">
-                <Dice5 className="w-5 h-5 text-black" />
-              </div>
-              <div>
-                <div className="font-semibold tracking-tight text-xl">Grok Game Night</div>
-                <div className="text-[10px] text-zinc-500 -mt-1">POWERED BY xAI</div>
-              </div>
+    <div className="min-h-screen bg-[#0f0f0f] text-[#f5f5f0] pb-20" onScroll={onScrollTick}>
+      {/* STICKY TIMER + HEADER */}
+      <div className="timer-bar sticky top-0 z-50 px-4 py-3 flex items-center gap-3 border-b border-[#3a3a35] bg-[#0a0a0a]">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2">
+            <div className={`font-poster text-3xl tracking-[-2px] ${timerColor}`}>{phaseLabel}</div>
+            <div className="font-mono text-xs text-[#666] pt-1">JUNE 6 • BOWLING AREA</div>
+          </div>
+          <div className="font-poster text-[42px] leading-none tracking-[-3.5px] tabular-nums mt-[-4px]">
+            {formatMMSS(timeRemaining)}
+          </div>
+        </div>
+
+        {/* Admin timer controls */}
+        {isAdmin && currentRound === 0 && (
+          <button onClick={() => startRound(1)} className="font-brush text-sm px-5 py-2 border-2 border-white active:bg-white active:text-black rounded">START ROUND 1</button>
+        )}
+
+        {isAdmin && currentRound > 0 && (
+          <div className="flex flex-col items-end gap-1 text-[10px]">
+            <div className="flex gap-1">
+              <button onClick={toggleTimerRun} className="px-3 py-1 border border-white/70 rounded flex items-center gap-1 active:bg-white/10">
+                {timerRunning ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                {timerRunning ? 'PAUSE' : 'RESUME'}
+              </button>
+              <button onClick={resetPhaseTime} className="px-3 py-1 border border-white/70 rounded flex items-center gap-1 active:bg-white/10">
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            {!isBreak && (
+              <button onClick={startBreakNow} className="text-[10px] px-3 py-0.5 border border-[#ffe24d] text-[#ffe24d] rounded active:bg-[#ffe24d]/10">START 5-MIN BREAK</button>
+            )}
+            {isBreak && (
+              <button onClick={endBreakStartNext} className="text-[10px] px-3 py-0.5 border border-[#a3ff4d] text-[#a3ff4d] rounded active:bg-[#a3ff4d]/10">END BREAK — START R{currentRound + 1}</button>
+            )}
+          </div>
+        )}
+
+        {/* User + Sound */}
+        <div className="flex flex-col items-end text-right text-xs leading-none gap-1 pl-2 border-l border-[#3a3a35]">
+          <div className="flex items-center gap-1.5">
+            <span className="font-chalk text-sm text-[#ddd]">{currentName}</span>
+            {isAdmin && <span className="admin-badge">ADMIN</span>}
+          </div>
+          <button onClick={toggleSound} className="sound-toggle flex items-center gap-1 active:bg-[#222]">
+            {soundEnabled ? <Volume2 className="w-3 h-3" /> : <VolumeX className="w-3 h-3" />}
+            SOUND
+          </button>
+        </div>
+      </div>
+
+      {/* VIEW SWITCHER */}
+      <div className="flex border-b border-[#3a3a35] bg-[#111] sticky top-[72px] z-40">
+        {[
+          { id: 'intro', label: 'INTRO & RULES', icon: Info },
+          { id: 'games', label: 'GAMES & SCORES', icon: Users },
+          { id: 'scorecard', label: 'SCORECARD', icon: Trophy },
+        ].map((v) => {
+          const Icon = v.icon;
+          const active = view === v.id;
+          return (
+            <button
+              key={v.id}
+              onClick={() => { setView(v.id as any); playSound('tap'); }}
+              className={`flex-1 flex items-center justify-center gap-2 py-3 text-xs tracking-[1.5px] font-brush border-b-2 transition ${active ? 'border-white text-white' : 'border-transparent text-[#888] hover:text-[#ccc]'}`}
+            >
+              <Icon className="w-3.5 h-3.5" /> {v.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ========== INTRO / RULES ========== */}
+      {view === 'intro' && (
+        <div className="max-w-2xl mx-auto px-5 pt-8 pb-12">
+          <div className="text-center mb-8">
+            <div className="font-brush text-[13px] tracking-[4px] text-[#888] mb-1">{EVENT_INFO.hosts}</div>
+            <div className="poster-title text-7xl leading-none mb-1">{EVENT_INFO.title}</div>
+            <div className="font-poster text-2xl tracking-[-1px] text-[#ddd]">{EVENT_INFO.date}</div>
+            <div className="text-[#888] mt-1">{EVENT_INFO.time} • {EVENT_INFO.venue}</div>
+          </div>
+
+          <div className="chalkboard p-6 mb-8">
+            <div className="font-brush text-xl mb-4 text-[#ddd]">STRUCTURE</div>
+            <div className="grid grid-cols-1 gap-y-2 text-sm font-chalk">
+              <div>5 ROUNDS — each 25 minutes long</div>
+              <div>5-MINUTE BREAKS between rounds</div>
+              <div>ONE GAME PER ROUND: Bowling, Pool, Ping Pong, Foosball, Dominoes</div>
+              <div className="text-[#a3ff4d] mt-1">Round 1 names &amp; teams available immediately.</div>
+              <div>Each next round’s assignments unlock when the previous round starts.</div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 text-sm">
-            <button
-              onClick={dealRandomGame}
-              className="game-btn-secondary flex items-center gap-2 px-4 h-9 rounded-full text-sm"
-            >
-              <Sparkles className="w-4 h-4" /> Deal random game
-            </button>
-            <a
-              href="https://github.com/1MORLAP/grok-game-night"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-zinc-400 hover:text-zinc-200 transition px-3"
-            >
-              <ExternalLink className="w-4 h-4" />
-              <span className="hidden sm:inline">GitHub</span>
-            </a>
+          <div className="poster-card p-6 mb-8">
+            <div className="font-brush text-xl mb-3 text-[#ddd]">THE RULES</div>
+            <ul className="font-chalk space-y-3 text-[15px] leading-tight">
+              {RULES.map((r, i) => <li key={i} className="pl-1">• {r}</li>)}
+            </ul>
+          </div>
+
+          <div className="text-center text-[10px] text-[#555] font-mono tracking-widest">
+            LOCAL DEVICE SHELL — READY FOR SHARED BACKEND LATER
           </div>
         </div>
+      )}
 
-        {/* Mode nav */}
-        <div className="border-t border-zinc-800 bg-zinc-950">
-          <div className="max-w-5xl mx-auto px-6 flex gap-1 overflow-x-auto py-2 text-sm">
-            {[
-              { id: "picker", label: "Quick Picker", icon: Dice5 },
-              { id: "trivia", label: "Grok Trivia", icon: Brain },
-              { id: "charades", label: "Prompt Party", icon: Users },
-              { id: "wyr", label: "Would You Rather", icon: Sparkles },
-              { id: "scoreboard", label: "Scoreboard", icon: Trophy },
-              { id: "custom", label: "Grok Custom", icon: Star },
-            ].map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                onClick={() => setMode(id as GameMode)}
-                className={`flex items-center gap-2 px-4 py-1.5 rounded-full whitespace-nowrap transition ${
-                  mode === id
-                    ? "bg-zinc-800 text-white"
-                    : "hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200"
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                {label}
-              </button>
-            ))}
+      {/* ========== GAMES SCREEN ========== */}
+      {view === 'games' && (
+        <div className="max-w-2xl mx-auto px-4 pt-5 pb-16">
+          {/* ROUND SELECTOR — slot machine style */}
+          <div className="mb-2 flex items-center justify-between px-1">
+            <div className="font-brush text-xs tracking-[2px] text-[#777]">SELECT ROUND</div>
+            <div className="text-[10px] text-[#555] font-mono">NAMES UNLOCK 1 ROUND AHEAD • SCORES WHEN STARTED</div>
           </div>
-        </div>
-      </header>
+          <div className="flex gap-2 overflow-x-auto pb-2 selector-scroll">
+            {ROUND_LABELS.map((r) => {
+              const started = startedRounds.includes(r);
+              const unlocked = canEnterNames(r);
+              const complete = roundComplete(r);
+              const isActive = r === selectedRound;
+              return (
+                <button
+                  key={r}
+                  onClick={() => selectRound(r)}
+                  className={`round-slot rounded-xl min-w-[78px] text-center active:scale-[0.985] ${isActive ? 'active' : ''} ${started ? '' : unlocked ? 'unlocked' : 'locked'}`}
+                >
+                  {r}
+                  {complete && <div className="text-[10px] text-[#a3ff4d] mt-[-2px]">✓</div>}
+                </button>
+              );
+            })}
+          </div>
 
-      <main className="flex-1 max-w-5xl mx-auto w-full px-6 py-10">
-        {/* HERO / status bar */}
-        <div className="mb-8 flex items-end justify-between gap-4">
-          <div>
-            <div className="uppercase tracking-[3px] text-xs text-zinc-500 mb-1">FRIDAY • FRIENDS • FUN</div>
-            <h1 className="text-5xl font-semibold tracking-tighter">Let's play.</h1>
+          {/* GAME SELECTOR */}
+          <div className="mt-5 mb-2 px-1">
+            <div className="font-brush text-xs tracking-[2px] text-[#777]">GAME FOR ROUND {selectedRound}</div>
           </div>
-          <div className="text-right text-sm text-zinc-500 max-w-[260px]">
-            Real Grok generations available when you set <span className="font-mono text-accent">XAI_API_KEY</span> in <span className="font-mono">.env.local</span>
+          <div className="grid grid-cols-5 gap-2">
+            {GAMES.map((g) => {
+              const active = g.id === selectedGame;
+              return (
+                <button
+                  key={g.id}
+                  onClick={() => selectGame(g.id)}
+                  className={`game-btn rounded-xl py-3 text-center text-[10px] leading-none active:scale-[0.985] ${active ? 'active' : ''} ${getNeonClass(g.id)}`}
+                >
+                  <div className="text-2xl mb-1">{g.icon}</div>
+                  <div className="font-brush tracking-wide">{g.label.split(' ')[0]}</div>
+                </button>
+              );
+            })}
           </div>
-        </div>
 
-        {/* PICKER */}
-        {mode === "picker" && (
-          <div>
-            <div className="game-card rounded-3xl p-8 mb-6">
-              <div className="flex items-center gap-3 mb-6">
-                <Dice5 className="w-6 h-6 accent" />
-                <div className="font-semibold text-2xl tracking-tight">Quick Game Picker</div>
+          {/* CURRENT SLOT FORM */}
+          <div className={`mt-6 poster-card p-5 rounded-2xl ${getNeonClass(selectedGame)}`}>
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-3xl">{gameInfo.icon}</span>
+              <div>
+                <div className="font-brush text-xl leading-none">{gameInfo.label}</div>
+                <div className="text-xs text-[#888]">ROUND {selectedRound} • {canEnterScores(selectedRound) ? 'SCORING OPEN' : 'WAITING FOR ROUND START'}</div>
               </div>
+              {currentEntry?.locked && (
+                <div className="ml-auto locked-indicator flex items-center gap-1 text-[#888]">
+                  <Lock className="w-3 h-3" /> LOCKED
+                </div>
+              )}
+            </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div>
-                  <div className="text-xs uppercase tracking-widest text-zinc-500 mb-2">PLAYERS</div>
-                  <div className="flex items-center gap-4">
-                    <button onClick={() => setPlayersCount(Math.max(2, playersCount - 1))} className="game-btn-secondary w-10 h-10 rounded-full flex items-center justify-center">-</button>
-                    <div className="text-5xl font-semibold tabular-nums w-16 text-center">{playersCount}</div>
-                    <button onClick={() => setPlayersCount(Math.min(14, playersCount + 1))} className="game-btn-secondary w-10 h-10 rounded-full flex items-center justify-center">+</button>
+            {/* TEAMS */}
+            <div className="mb-5">
+              <div className="flex gap-4">
+                {/* Team A */}
+                <div className="flex-1">
+                  <div className="font-brush text-xs tracking-[1px] mb-1.5 text-[#888]">TEAM A</div>
+                  <div className="min-h-[52px] chalkboard rounded-xl p-2 flex flex-wrap gap-1.5">
+                    {teamA.length === 0 && <div className="text-[#555] text-xs px-2 pt-1">No players yet</div>}
+                    {teamA.map(name => (
+                      <div key={name} className="player-chip text-sm">
+                        {name}
+                        {!namesLocked && <button onClick={() => removeFromTeam(name, 'A')} className="text-[#666]"><X className="w-3 h-3" /></button>}
+                      </div>
+                    ))}
                   </div>
                 </div>
-                <div>
-                  <div className="text-xs uppercase tracking-widest text-zinc-500 mb-2">MAX MINUTES</div>
-                  <input
-                    type="range"
-                    min={5}
-                    max={45}
-                    step={5}
-                    value={duration}
-                    onChange={(e) => setDuration(parseInt(e.target.value))}
-                    className="w-full accent-violet-400"
-                  />
-                  <div className="text-4xl font-semibold tabular-nums mt-1">{duration} min</div>
-                </div>
-                <div>
-                  <div className="text-xs uppercase tracking-widest text-zinc-500 mb-2">VIBE</div>
-                  <div className="flex flex-wrap gap-2">
-                    {VIBES.map((v) => (
-                      <button
-                        key={v}
-                        onClick={() => setVibe(v)}
-                        className={`px-5 py-2 rounded-full text-sm border transition ${vibe === v ? "border-accent bg-zinc-900" : "border-zinc-800 hover:border-zinc-700"}`}
-                      >
-                        {v}
-                      </button>
+                {/* Team B */}
+                <div className="flex-1">
+                  <div className="font-brush text-xs tracking-[1px] mb-1.5 text-[#888]">TEAM B</div>
+                  <div className="min-h-[52px] chalkboard rounded-xl p-2 flex flex-wrap gap-1.5">
+                    {teamB.length === 0 && <div className="text-[#555] text-xs px-2 pt-1">No players yet</div>}
+                    {teamB.map(name => (
+                      <div key={name} className="player-chip text-sm">
+                        {name}
+                        {!namesLocked && <button onClick={() => removeFromTeam(name, 'B')} className="text-[#666]"><X className="w-3 h-3" /></button>}
+                      </div>
                     ))}
                   </div>
                 </div>
               </div>
 
-              <div className="flex gap-3 mt-8">
-                <button onClick={pickGames} className="game-btn flex-1 h-14 rounded-2xl text-lg flex items-center justify-center gap-2">
-                  <Play className="w-5 h-5" /> Pick games for us
-                </button>
-                <button onClick={dealRandomGame} className="game-btn-secondary flex-1 h-14 rounded-2xl text-lg flex items-center justify-center gap-2">
-                  <Sparkles className="w-5 h-5" /> Surprise me
-                </button>
-              </div>
-            </div>
-
-            {pickedGames.length > 0 && (
-              <div>
-                <div className="flex items-center justify-between mb-3 px-1">
-                  <div className="font-medium text-sm text-zinc-400">RECOMMENDED FOR THIS CREW</div>
-                  <button onClick={pickGames} className="text-xs flex items-center gap-1 text-accent hover:underline">
-                    <RotateCcw className="w-3.5 h-3.5" /> reroll
-                  </button>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {pickedGames.map((g, i) => (
-                    <div key={i} className="game-card rounded-2xl p-5 flex flex-col">
-                      <div className="font-semibold text-lg tracking-tight mb-1">{g.name}</div>
-                      <div className="text-sm text-zinc-400 mb-3 flex-1">{g.desc}</div>
-                      <div className="flex gap-2 text-xs">
-                        <span className="tag">{g.players} players</span>
-                        <span className="tag">{g.time}</span>
-                        <span className="tag">{g.energy}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* TRIVIA */}
-        {mode === "trivia" && (
-          <div className="game-card rounded-3xl p-8">
-            <div className="flex justify-between items-start mb-8">
-              <div>
-                <div className="flex items-center gap-3">
-                  <Brain className="w-6 h-6 accent" />
-                  <div className="text-2xl font-semibold tracking-tight">Grok Trivia</div>
-                </div>
-                <div className="text-zinc-400 mt-1">Answer fast. Grok knows things.</div>
-              </div>
-              <div className="text-right">
-                <div className="text-xs text-zinc-500">SCORE</div>
-                <div className="text-4xl font-semibold tabular-nums">{triviaScore}<span className="text-base text-zinc-500">/{triviaQuestions.length || 5}</span></div>
-              </div>
-            </div>
-
-            {!triviaQuestions.length ? (
-              <div className="text-center py-10">
-                <button onClick={() => generateTrivia(false)} disabled={isGenerating} className="game-btn px-10 h-14 rounded-2xl text-lg">Start Local Trivia</button>
-                <div className="mt-4">
-                  <button onClick={() => generateTrivia(true)} disabled={isGenerating} className="text-sm underline-offset-4 hover:underline text-accent flex items-center gap-1 mx-auto">
-                    <Sparkles className="w-4 h-4" /> Generate fresh set with Grok
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <div className="mb-2 flex items-center gap-2 text-sm text-zinc-400">
-                  QUESTION {triviaIndex + 1} / {triviaQuestions.length}
-                </div>
-
-                <div className="text-2xl font-medium tracking-tight mb-6 min-h-[72px]">{currentTrivia?.q}</div>
-
-                <div className="grid grid-cols-1 gap-3">
-                  {currentTrivia?.options.map((opt, idx) => {
-                    const isCorrect = idx === currentTrivia.correct;
-                    const isSelected = idx === triviaSelected;
-                    let cls = "game-btn-secondary text-left h-auto py-4 px-5 rounded-2xl text-lg";
-                    if (triviaRevealed) {
-                      if (isCorrect) cls = "bg-emerald-500/10 border-emerald-500/60 text-emerald-400";
-                      else if (isSelected) cls = "bg-red-500/10 border-red-500/50 text-red-400";
-                    } else if (isSelected) {
-                      cls = "border-accent bg-zinc-900";
-                    }
-                    return (
-                      <button key={idx} disabled={triviaRevealed} onClick={() => selectTriviaAnswer(idx)} className={cls}>
-                        {opt}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {triviaRevealed && currentTrivia?.fact && (
-                  <div className="mt-4 text-sm p-4 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-400">{currentTrivia.fact}</div>
-                )}
-
-                <div className="flex gap-3 mt-8">
-                  <button onClick={nextTrivia} disabled={!triviaRevealed} className="game-btn flex-1 h-12 rounded-2xl disabled:opacity-50">Next Question</button>
-                  <button onClick={() => generateTrivia(false)} className="game-btn-secondary px-6 rounded-2xl">New Deck</button>
-                  <button onClick={() => generateTrivia(true)} disabled={isGenerating} className="game-btn-secondary flex items-center gap-2 px-5 rounded-2xl">
-                    <Sparkles className="w-4 h-4" /> Grok
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* CHARADES / PROMPT PARTY */}
-        {mode === "charades" && (
-          <div className="game-card rounded-3xl p-8">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <Users className="w-6 h-6 accent2" />
-                <div>
-                  <div className="text-2xl font-semibold tracking-tight">Prompt Party</div>
-                  <div className="text-sm text-zinc-400">Charades, but make it 2026</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <select
-                  value={charadesCategory}
-                  onChange={(e) => setCharadesCategory(e.target.value)}
-                  className="bg-zinc-900 border border-zinc-700 rounded-full px-4 py-1 text-sm"
-                >
-                  {CHARADES_CATEGORIES.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {!charadesPrompts.length ? (
-              <div className="py-10 text-center">
-                <button onClick={() => generateCharades(false)} className="game-btn px-10 h-14 rounded-2xl text-lg">Load Prompts</button>
+              {/* Roster picker */}
+              {!namesLocked && (
                 <div className="mt-3">
-                  <button onClick={() => generateCharades(true)} className="text-accent text-sm flex gap-1 items-center mx-auto hover:underline"><Sparkles className="w-4 h-4"/> Use Grok</button>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center">
-                <div className="uppercase text-xs tracking-[2px] text-zinc-500 mb-3">PROMPT {charadesIndex + 1} / {charadesPrompts.length}</div>
-
-                <div className="min-h-[140px] flex items-center justify-center">
-                  <div className="text-4xl sm:text-5xl font-semibold tracking-tighter leading-none px-6">{currentCharade}</div>
-                </div>
-
-                <div className="mt-8 flex items-center justify-center gap-4">
-                  <button onClick={toggleCharadesTimer} className="game-btn h-14 w-14 rounded-full flex items-center justify-center">
-                    {charadesRunning ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6" />}
-                  </button>
-
-                  <div className="font-mono text-7xl tabular-nums w-28 text-center tracking-[-3px]">{charadesTimer}</div>
-
-                  <button onClick={nextCharades} className="game-btn-secondary h-14 px-8 rounded-full flex items-center gap-2">
-                    <SkipForward className="w-4 h-4" /> NEXT
-                  </button>
-                </div>
-
-                <div className="mt-6 flex justify-center gap-3">
-                  <button onClick={resetCharades} className="text-xs text-zinc-400 hover:text-white">Reset round</button>
-                  <button onClick={() => generateCharades(true)} className="text-xs text-accent flex items-center gap-1"><Sparkles className="w-3.5 h-3.5"/> New Grok deck</button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* WOULD YOU RATHER */}
-        {mode === "wyr" && (
-          <div className="game-card rounded-3xl p-8 max-w-2xl mx-auto">
-            <div className="flex items-center gap-3 mb-8">
-              <Sparkles className="w-6 h-6 accent3" />
-              <div className="text-2xl font-semibold tracking-tight">Would You Rather</div>
-            </div>
-
-            {!wyrQuestions.length ? (
-              <div className="text-center py-8">
-                <button onClick={() => generateWyr(false)} className="game-btn h-14 px-10 rounded-2xl">Start</button>
-                <p className="mt-3 text-sm"><button onClick={() => generateWyr(true)} className="text-accent underline">Generate with Grok</button></p>
-              </div>
-            ) : (
-              <>
-                <div className="text-center mb-4 text-sm text-zinc-400">DILEMMA {wyrIndex + 1} / {wyrQuestions.length}</div>
-                <div className="space-y-3">
-                  <button onClick={() => voteWyr("a")} className="game-btn w-full h-20 rounded-2xl text-xl px-8 text-left">{currentWyr?.a}</button>
-                  <div className="text-center text-xs text-zinc-500 py-1">OR</div>
-                  <button onClick={() => voteWyr("b")} className="game-btn w-full h-20 rounded-2xl text-xl px-8 text-left bg-[#67e8f9] hover:bg-[#a5f3fc] text-black">{currentWyr?.b}</button>
-                </div>
-
-                <div className="mt-6 flex justify-between text-sm text-zinc-400">
-                  <div>A votes: <span className="font-mono text-white">{wyrVotes.a}</span></div>
-                  <div>B votes: <span className="font-mono text-white">{wyrVotes.b}</span></div>
-                </div>
-
-                <button onClick={() => generateWyr(true)} disabled={isGenerating} className="mt-8 text-xs text-accent flex items-center gap-1 mx-auto">
-                  <Sparkles className="w-3.5 h-3.5" /> More Grok dilemmas
-                </button>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* SCOREBOARD */}
-        {mode === "scoreboard" && (
-          <div className="game-card rounded-3xl p-8">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <Trophy className="w-6 h-6 accent" />
-                <div className="text-2xl font-semibold tracking-tight">Live Scoreboard</div>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={sortPlayers} className="game-btn-secondary px-4 h-9 rounded-full text-sm flex items-center gap-1"><Trophy className="w-4 h-4" /> Sort</button>
-                <button onClick={resetScores} className="game-btn-secondary px-4 h-9 rounded-full text-sm">Reset</button>
-              </div>
-            </div>
-
-            <div className="space-y-2 mb-8">
-              {scoreboard
-                .sort((a, b) => b.score - a.score)
-                .map((player, idx) => (
-                  <div key={player.id} className="flex items-center gap-3 bg-zinc-900/60 rounded-2xl px-5 h-16 group">
-                    <div className="w-6 text-right font-mono text-xs text-zinc-500">{idx + 1}</div>
-                    <div className="flex-1 font-medium text-lg">{player.name}</div>
-                    <div className="font-mono text-4xl tabular-nums w-16 text-right pr-1">{player.score}</div>
-                    <div className="flex gap-1 opacity-80 group-hover:opacity-100">
-                      <button onClick={() => changeScore(player.id, -1)} className="w-9 h-9 rounded-full bg-zinc-800 hover:bg-red-500/20 active:bg-red-500/30 flex items-center justify-center"><Minus className="w-4 h-4" /></button>
-                      <button onClick={() => changeScore(player.id, 1)} className="w-9 h-9 rounded-full bg-zinc-800 hover:bg-emerald-500/20 active:bg-emerald-500/30 flex items-center justify-center"><Plus className="w-4 h-4" /></button>
-                      {scoreboard.length > 1 && (
-                        <button onClick={() => removePlayer(player.id)} className="w-9 h-9 rounded-full bg-zinc-800 hover:bg-zinc-700 text-xs ml-1">×</button>
-                      )}
-                    </div>
+                  <div className="text-[10px] text-[#666] mb-1 px-0.5 font-mono tracking-widest">ROSTER — TAP TO ASSIGN</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {roster.map(name => {
+                      const inA = teamA.includes(name);
+                      const inB = teamB.includes(name);
+                      const isYou = name === currentName;
+                      return (
+                        <button
+                          key={name}
+                          onClick={() => {
+                            if (inA) togglePlayerToTeam(name, 'B');
+                            else if (inB) togglePlayerToTeam(name, 'A');
+                            else togglePlayerToTeam(name, 'A');
+                          }}
+                          className={`player-chip active:scale-[0.985] text-sm ${isYou ? 'ring-1 ring-offset-2 ring-offset-[#161613] ring-[#a3ff4d]' : ''} ${inA ? 'neon-border-cyan' : inB ? 'neon-border-lime' : ''}`}
+                        >
+                          {name}{isYou && <span className="text-[9px] opacity-60">(you)</span>}
+                          {inA && <span className="text-[9px] text-[#67f6ff]">A</span>}
+                          {inB && <span className="text-[9px] text-[#a3ff4d]">B</span>}
+                        </button>
+                      );
+                    })}
+                    {/* Add new */}
+                    <AddPlayerInline onAdd={(n) => {
+                      addToRoster(n);
+                      // auto-assign to first empty team or A
+                      if (teamA.length <= teamB.length) setTeamA([...teamA, n]);
+                      else setTeamB([...teamB, n]);
+                    }} />
                   </div>
-                ))}
-            </div>
-
-            <div className="flex gap-2">
-              <input
-                value={newPlayerName}
-                onChange={(e) => setNewPlayerName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addPlayer()}
-                placeholder="New player name"
-                className="flex-1 bg-zinc-900 border border-zinc-800 rounded-2xl px-5 h-12 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600"
-              />
-              <button onClick={addPlayer} className="game-btn px-8 rounded-2xl">Add</button>
-            </div>
-            <p className="text-center text-xs text-zinc-500 mt-3">Scores are saved in your browser for this device.</p>
-          </div>
-        )}
-
-        {/* CUSTOM GROK GENERATOR */}
-        {mode === "custom" && (
-          <div className="max-w-xl mx-auto">
-            <div className="game-card rounded-3xl p-8">
-              <div className="flex items-center gap-3 mb-4">
-                <Star className="w-6 h-6 accent3" />
-                <div className="text-2xl font-semibold tracking-tight">Ask Grok for a game</div>
-              </div>
-              <p className="text-zinc-400 mb-6">Describe any vibe, theme, or constraint. Grok will invent a short game on the spot.</p>
-
-              <div className="flex gap-2">
-                <input
-                  value={customPrompt}
-                  onChange={(e) => setCustomPrompt(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && generateCustom()}
-                  placeholder="e.g. a 5-minute game about terrible superpowers"
-                  className="flex-1 bg-zinc-900 border border-zinc-800 rounded-2xl px-5 h-12"
-                />
-                <button onClick={generateCustom} disabled={isGenerating || !customPrompt.trim()} className="game-btn px-8 rounded-2xl disabled:opacity-60">Generate</button>
-              </div>
-
-              {customResult && (
-                <div className="mt-8 border border-zinc-800 rounded-2xl p-6 bg-black/30">
-                  <div className="font-semibold text-xl mb-1">{customResult.title}</div>
-                  <div className="text-zinc-300 whitespace-pre-wrap text-[15px] leading-snug mb-5">{customResult.rules}</div>
-
-                  {customResult.examples && (
-                    <div>
-                      <div className="uppercase text-xs tracking-widest mb-2 text-zinc-500">EXAMPLES</div>
-                      <ul className="space-y-2 text-sm">
-                        {customResult.examples.map((ex: string, i: number) => (
-                          <li key={i} className="pl-4 border-l-2 border-accent/40">• {ex}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
-            <p className="text-center mt-4 text-xs text-zinc-500">Requires XAI_API_KEY. Results are creative and sometimes unhinged in the best way.</p>
-          </div>
-        )}
-      </main>
 
-      <footer className="border-t border-zinc-800 py-6 text-xs text-center text-zinc-500">
-        Built for game night. <span className="text-zinc-400">Made with Grok • xAI</span> • <a href="https://github.com/1MORLAP/grok-game-night" className="hover:text-zinc-300 underline-offset-2">Source</a>
-      </footer>
+            {/* SCORES */}
+            <div>
+              <div className="font-brush text-xs tracking-[1px] mb-1.5 text-[#888]">FINAL SCORES</div>
+              <div className="flex items-center gap-3">
+                <div>
+                  <div className="text-[10px] text-[#666] mb-0.5">TEAM A</div>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={scoreA ?? ''}
+                    onChange={e => setScoreA(e.target.value === '' ? null : Math.max(0, parseInt(e.target.value)))}
+                    disabled={!scoresAllowed}
+                    className="score-input rounded"
+                    placeholder="—"
+                  />
+                </div>
+                <div className="pt-5 text-[#555] font-poster text-xl">VS</div>
+                <div>
+                  <div className="text-[10px] text-[#666] mb-0.5">TEAM B</div>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={scoreB ?? ''}
+                    onChange={e => setScoreB(e.target.value === '' ? null : Math.max(0, parseInt(e.target.value)))}
+                    disabled={!scoresAllowed}
+                    className="score-input rounded"
+                    placeholder="—"
+                  />
+                </div>
+
+                <div className="flex-1" />
+
+                {currentEntry?.locked && isAdmin && (
+                  <button onClick={unlockEntry} className="flex items-center gap-1 text-xs border border-[#a3ff4d] text-[#a3ff4d] px-3 py-2 rounded active:bg-[#a3ff4d]/10">
+                    <Unlock className="w-3.5 h-3.5" /> UNLOCK
+                  </button>
+                )}
+                {!currentEntry?.locked && isAdmin && currentEntry && (
+                  <button onClick={lockEntry} className="flex items-center gap-1 text-xs border border-[#888] px-3 py-2 rounded active:bg-white/5">
+                    <Lock className="w-3.5 h-3.5" /> LOCK
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* ACTIONS */}
+            <div className="mt-5 flex gap-2">
+              {!namesLocked && (
+                <button onClick={saveCurrentTeams} className="flex-1 font-brush tracking-widest py-3 border-2 border-white text-sm active:bg-white active:text-black rounded">SAVE NAMES / TEAMS</button>
+              )}
+              <button
+                onClick={submitScores}
+                disabled={!scoresAllowed || scoreA == null || scoreB == null}
+                className="flex-1 font-brush tracking-widest py-3 border-2 border-white bg-white text-black text-sm disabled:opacity-40 disabled:bg-transparent disabled:text-white active:bg-[#a3ff4d] active:border-[#a3ff4d] rounded"
+              >
+                SUBMIT SCORES {scoreA != null && scoreB != null ? `(${scoreA}–${scoreB})` : ''}
+              </button>
+            </div>
+            <div className="text-center text-[10px] text-[#555] mt-2 font-mono">
+              {isSlotLocked ? "LOCKED — only admin can change" : scoresAllowed ? "Entry will lock for non-admins after submit" : "Scores open once round starts"}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========== SCORECARD ========== */}
+      {view === 'scorecard' && (
+        <div className="max-w-3xl mx-auto px-4 pt-6 pb-16">
+          <div className="flex items-baseline justify-between mb-3 px-1">
+            <div>
+              <div className="font-brush text-2xl">SCORECARD</div>
+              <div className="text-xs text-[#777]">{completedSlots} / {totalSlots} GAMES RECORDED</div>
+            </div>
+            <div className="text-right text-xs text-[#666]">SORTED BY TOTAL • LOCAL ONLY</div>
+          </div>
+
+          {/* Round progress */}
+          <div className="flex gap-2 mb-6">
+            {[1,2,3,4,5].map(r => (
+              <div key={r} className={`flex-1 text-center py-1.5 rounded border ${roundComplete(r as RoundNum) ? 'border-[#a3ff4d] bg-[#a3ff4d]/5' : 'border-[#3a3a35] bg-[#161613]'}`}>
+                <div className="font-poster text-lg">R{r}</div>
+                <div className="text-[10px] text-[#777] -mt-0.5">{roundComplete(r as RoundNum) ? 'COMPLETE ✓' : '—'}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Leaderboard */}
+          {leaderboard.length === 0 && (
+            <div className="chalkboard p-8 text-center text-[#888]">No scores yet. Play some games!</div>
+          )}
+
+          {leaderboard.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="scorecard-table w-full min-w-[620px]">
+                <thead>
+                  <tr>
+                    <th className="text-left py-2 pl-2">PLAYER</th>
+                    <th className="text-center">R1</th>
+                    <th className="text-center">R2</th>
+                    <th className="text-center">R3</th>
+                    <th className="text-center">R4</th>
+                    <th className="text-center">R5</th>
+                    <th className="text-right pr-2">TOTAL</th>
+                    <th className="text-right pr-1 text-[#666]">GAMES</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leaderboard.map((row, idx) => (
+                    <tr key={row.name} className="leaderboard-row">
+                      <td className="py-2 pl-2 font-medium flex items-center gap-2">
+                        {row.name}
+                        {row.name === currentName && <span className="text-[9px] text-[#a3ff4d]">(you)</span>}
+                      </td>
+                      {row.round.map((pts, i) => (
+                        <td key={i} className="text-center tabular-nums font-mono text-sm">{pts || '—'}</td>
+                      ))}
+                      <td className="text-right pr-2 font-poster text-xl tabular-nums">{row.total}</td>
+                      <td className="text-right pr-2 text-xs text-[#666] font-mono">{row.games}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="mt-8 text-center text-[10px] text-[#555]">Each player receives the full team score for every game they play.</div>
+        </div>
+      )}
+
+      {/* Bottom hint bar */}
+      <div className="fixed bottom-0 left-0 right-0 bg-[#0a0a0a] border-t border-[#3a3a35] text-[10px] text-[#555] font-mono text-center py-1.5 tracking-widest">
+        GROK GAME NIGHT — LOCAL SHELL • {currentName}{isAdmin ? ' (ADMIN)' : ''}
+      </div>
+    </div>
+  );
+}
+
+// Small inline add player component
+function AddPlayerInline({ onAdd }: { onAdd: (name: string) => void }) {
+  const [val, setVal] = useState("");
+  return (
+    <div className="flex items-center gap-1 text-sm">
+      <input
+        value={val}
+        onChange={e => setVal(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter' && val.trim()) { onAdd(val); setVal(''); } }}
+        placeholder="+ add"
+        className="bg-[#222] border border-[#444] text-xs px-2 py-1 rounded w-20 focus:outline-none"
+      />
+      <button
+        onClick={() => { if (val.trim()) { onAdd(val); setVal(''); } }}
+        className="text-[#a3ff4d] px-1"
+      >
+        <Plus className="w-3.5 h-3.5" />
+      </button>
     </div>
   );
 }

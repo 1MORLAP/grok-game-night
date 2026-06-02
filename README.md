@@ -1,66 +1,64 @@
-# 🎲 Grok Game Night
+# 🎳 Game Night • June 6, 2026
 
-**AI-powered party games and activities for friends, family, and chaotic game nights.**  
-Built with Next.js + Grok (xAI).
+**Paraiso Bay & Gran Paraiso Wellness Group**  
+Saturday, June 6 2026 • 5:00 PM – 9:00 PM • The Bowling Area
 
-## Features
+Mobile-first local-shell web app for tracking 5 rounds of:
+Bowling • Pool Table • Ping Pong • Foosball • Dominoes
 
-- **Quick Picker** — Filter by number of players, time, and vibe. Get a curated shortlist of games instantly.
-- **Grok Trivia** — Multiple-choice trivia. Use local deck or generate fresh themed rounds with Grok.
-- **Prompt Party (Charades)** — Timed acting prompts. Grok can write category-specific decks (xAI office, sci-fi, memes...).
-- **Would You Rather** — Vote on dilemmas. Generate new ones live with Grok.
-- **Live Scoreboard** — Add players, track points in real time. Persists in localStorage. Big friendly numbers.
-- **Grok Custom** — Describe any game idea ("5-minute game about terrible superpowers") and Grok invents rules + examples on the spot.
+## Features (Current Build)
 
-Everything works without an API key using smart local fallbacks. Connect your `XAI_API_KEY` for the full Grok experience.
+- **Mandatory name gate** — every device must enter a name before anything else. Cannot be skipped.
+- **Admin mode** — only the name `Tomasz` (case-insensitive, punctuation-insensitive) unlocks timer controls and the ability to unlock/edit any locked entry.
+- **Sticky event timer** — shows current phase (ROUND X or BREAK) + big MM:SS countdown. Admin gets inline Start / Pause / Resume / Advance controls.
+- **Round unlocking rules** (exactly as specified):
+  - Round 1 names + teams always available (even pre-event).
+  - Round N+1 names/teams unlock only after Round N has started.
+  - Scores for a round only become available once that round has started.
+- **Slot-machine round selector** + game selector (5 stations).
+- **Team A / Team B player pickers** with live roster + inline “+ add player”.
+- **Manual score entry** (team totals). Each player on a team receives the full team score for that game.
+- **Locking** — after scores are submitted, the entry locks for non-admins (names, teams, and scores become read-only). Admin can unlock + re-edit from the same UI.
+- **Live Scorecard** — 25-slot progress, round checkmarks, full leaderboard (per-round totals + grand total, sorted by total score). Shows games played per person.
+- **Chalkboard aesthetic** — distressed poster headlines, brush-painted “Game Night” accents, handwritten chalk text, neon cyan/lime/magenta/yellow/orange highlights, subtle grain texture.
+- **Web Audio ambient sounds** — distinct taps, selector ticks, score-submit dings, and throttled scroll ticks. Visible mute toggle (persisted).
+- 100% localStorage (device-only). Data model is intentionally backend-ready.
 
-## Quick Start
+## Fonts (image-matched direction)
+
+- Heavy distressed poster (Anton) for big titles and round numbers
+- Brush/marker (Permanent Marker) for accents, game buttons, and primary CTAs
+- Chalk/handwritten (Caveat) for rules, player names, labels, and scorecard
+
+## Run locally
 
 ```bash
-# 1. Clone
-git clone https://github.com/1MORLAP/grok-game-night.git
-cd grok-game-night
-
-# 2. Install
+cd /Users/tomasz/grok-game-night
 npm install
-
-# 3. (Optional but recommended) Enable live Grok generations
-cp .env.example .env.local
-# Edit .env.local and add your key from https://console.x.ai/
-
-# 4. Run
 npm run dev
 ```
 
-Open http://localhost:3000 and start dealing games.
+Open on phone-sized viewport (or desktop). Enter any name to begin. Enter **Tomasz** (or “tomasz!” etc.) on one device to test admin controls.
 
-## Using Grok Generations
+## Production build
 
-1. Get a key at https://console.x.ai/
-2. Put it in `.env.local` as `XAI_API_KEY=...`
-3. In the app, hit any **"Grok"** button in Trivia, Charades, WYR or Custom.
+```bash
+npm run build
+```
 
-The API route lives at `app/api/generate/route.ts` and talks directly to `https://api.x.ai/v1`.
+## Future / Backend Notes
 
-## Tech
+The structures (`MatchEntry`, round timer state, roster, derived leaderboard) are designed so a later shared backend (multi-device sync, real-time, persistent across phones) can be dropped in with minimal UI change.
 
-- Next.js 16 (App Router)
-- TypeScript + Tailwind
-- Lucide icons, canvas-confetti, sonner toasts
-- No heavy UI library — just fast, fun, party-ready components
+## Deployment (when ready)
 
-## Deploy
+```bash
+npm i -g vercel@latest
+vercel
+```
 
-Deploy anywhere Next.js runs (Vercel is one click). Remember to set the `XAI_API_KEY` environment variable in production if you want live generations.
+Set any required env (none for the local shell).
 
-## Contributing
+## License / Credit
 
-PRs welcome. Add a new game mode, improve prompt quality, or make the scoreboard support teams. Keep it delightful and low-friction.
-
-## License
-
-MIT — have fun, be kind, blame Grok when the prompts get weird.
-
----
-
-Made for game night. Powered by Grok.
+Built for the June 6 game night. Local interactive shell.
