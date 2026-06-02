@@ -79,10 +79,9 @@ function getNeonClass(gameId: GameId) {
 // ============ MAIN COMPONENT ============
 
 export default function ParaisoGameNight() {
-  // --- Identity (name optional for access; defaults to Guest so anyone can load the site immediately) ---
+  // --- Gate / Identity ---
   const [currentName, setCurrentName] = useState<string>("");
-  const [showNameEditor, setShowNameEditor] = useState(false);
-  const [editingName, setEditingName] = useState("");
+  const [gateName, setGateName] = useState("");
   const isAdmin = currentName ? isTomasz(currentName) : false;
 
   // --- Roster (known players for pickers) ---
@@ -194,20 +193,13 @@ export default function ParaisoGameNight() {
   useEffect(() => {
     try {
       const savedName = localStorage.getItem('gn-current-name') || "";
-      if (savedName) {
-        setCurrentName(savedName);
-      } else {
-        // Default to Guest so anyone can access the website immediately (no blocking gate)
-        const guest = "Guest";
-        setCurrentName(guest);
-        localStorage.setItem('gn-current-name', guest);
-      }
+      if (savedName) setCurrentName(savedName);
 
       const savedRoster = localStorage.getItem('gn-roster');
       if (savedRoster) setRoster(JSON.parse(savedRoster));
       else {
-        // Seed for immediate play / testing. Include "Guest" so the default identity can be picked into teams right away.
-        const seed = ["Guest", "Tomasz", "Alex", "Jordan", "Sam", "Taylor"];
+        // Seed a couple for immediate play / testing
+        const seed = ["Tomasz", "Alex", "Jordan", "Sam", "Taylor"];
         setRoster(seed);
         localStorage.setItem('gn-roster', JSON.stringify(seed));
       }
@@ -234,7 +226,6 @@ export default function ParaisoGameNight() {
 
   // Persist key pieces when they change
   useEffect(() => {
-    // Always persist (including "Guest" default) so name choice survives reloads
     if (currentName) saveAll({ currentName });
   }, [currentName, saveAll]);
 
@@ -367,37 +358,65 @@ export default function ParaisoGameNight() {
     if (next) playSound('tap');
   };
 
-  // ============ NAME (optional for access — anyone can load the full site immediately; defaults to "Guest"; click name in header to set/change for leaderboard/admin) ============
-  function startNameEdit() {
-    setEditingName(currentName || "Guest");
-    setShowNameEditor(true);
-    playSound('tap');
-  }
+  // ============ NAME GATE ============
+  const submitGate = () => {
+    const name = gateName.trim();
+    if (!name) {
+      toast.error("Please enter your name");
+      return;
+    }
+    const normalized = name;
+    setCurrentName(normalized);
 
-  function saveEditedName() {
-    let name = editingName.trim();
-    if (!name) name = "Guest";
-
-    const wasAdmin = isTomasz(currentName);
-    setCurrentName(name);
-
-    if (!roster.includes(name) && name !== "Guest") {
-      const newRoster = [...roster, name];
+    // add to roster if new
+    if (!roster.includes(normalized)) {
+      const newRoster = [...roster, normalized];
       setRoster(newRoster);
       saveAll({ roster: newRoster });
     }
 
-    setShowNameEditor(false);
-    playSound('tap');
+    playSound('submit');
+    toast.success(`Welcome, ${normalized.split(" ")[0]}!`);
+    setGateName("");
+  };
 
-    if (isTomasz(name) && !wasAdmin) {
-      toast.success("Admin mode activated — timer + unlock controls enabled");
-    }
-  }
+  if (!currentName) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a] px-6">
+        <div className="w-full max-w-md text-center">
+          <div className="mb-8">
+            <div className="font-brush text-5xl tracking-[3px] text-white mb-1">{EVENT_INFO.title}</div>
+            <div className="font-poster text-[11px] text-[#888] tracking-[4px]">{EVENT_INFO.date}</div>
+          </div>
 
-  function cancelNameEdit() {
-    setShowNameEditor(false);
-    playSound('tap');
+          <div className="chalkboard p-8 rounded-2xl mb-8">
+            <div className="font-chalk text-2xl mb-6 text-[#ddd]">What is your name?</div>
+            <input
+              value={gateName}
+              onChange={(e) => setGateName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') submitGate(); }}
+              placeholder="Your full name"
+              className="gate-input"
+              autoFocus
+            />
+            <div className="mt-8">
+              <button
+                onClick={submitGate}
+                disabled={!gateName.trim()}
+                className="gate-btn rounded-none active:scale-[0.985]"
+              >
+                ENTER GAME NIGHT
+              </button>
+            </div>
+            <div className="mt-4 text-[10px] text-[#666] font-mono tracking-widest">NO SKIPPING • ONE NAME PER DEVICE</div>
+          </div>
+
+          <div className="text-[10px] text-[#555] font-mono">
+            {EVENT_INFO.hosts}<br />{EVENT_INFO.venue}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   // ============ DATA MUTATORS ============
@@ -680,35 +699,12 @@ export default function ParaisoGameNight() {
           </div>
         )}
 
-        {/* User + Sound (name is editable; click to set/change — defaults to Guest so anyone can access the hosted site without a blocking gate) */}
-        <div className="flex flex-col items-end text-right text-xs leading-none gap-1 pl-2 border-l border-[#3a3a35] min-w-[92px]">
-          {!showNameEditor ? (
-            <div
-              onClick={startNameEdit}
-              className="flex items-center gap-1.5 cursor-pointer active:opacity-70"
-              title="Click to set or change your name (used for teams & leaderboard)"
-            >
-              <span className="font-chalk text-sm text-[#ddd] underline decoration-dotted underline-offset-2">{currentName}</span>
-              {isAdmin && <span className="admin-badge">ADMIN</span>}
-              <span className="text-[8px] text-[#666]">edit</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1 w-full">
-              <input
-                value={editingName}
-                onChange={(e) => setEditingName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') saveEditedName();
-                  if (e.key === 'Escape') cancelNameEdit();
-                }}
-                className="bg-[#111] border border-[#555] text-xs px-2 py-0.5 rounded font-chalk w-20 focus:outline-none focus:border-white"
-                placeholder="Name"
-                autoFocus
-              />
-              <button onClick={saveEditedName} className="text-[10px] px-1.5 py-px border border-[#a3ff4d] text-[#a3ff4d] rounded active:bg-[#a3ff4d]/10">OK</button>
-              <button onClick={cancelNameEdit} className="text-[10px] px-1 py-px text-[#888]">×</button>
-            </div>
-          )}
+        {/* User + Sound */}
+        <div className="flex flex-col items-end text-right text-xs leading-none gap-1 pl-2 border-l border-[#3a3a35]">
+          <div className="flex items-center gap-1.5">
+            <span className="font-chalk text-sm text-[#ddd]">{currentName}</span>
+            {isAdmin && <span className="admin-badge">ADMIN</span>}
+          </div>
           <button onClick={toggleSound} className="sound-toggle flex items-center gap-1 active:bg-[#222]">
             {soundEnabled ? <Volume2 className="w-3 h-3" /> : <VolumeX className="w-3 h-3" />}
             SOUND
@@ -1032,7 +1028,7 @@ export default function ParaisoGameNight() {
 
       {/* Bottom hint bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-[#0a0a0a] border-t border-[#3a3a35] text-[10px] text-[#555] font-mono text-center py-1.5 tracking-widest">
-        GAME NIGHT • {currentName}{isAdmin ? ' (ADMIN)' : ''} — click name above to personalize (opens to Guest for anyone)
+        GROK GAME NIGHT — LOCAL SHELL • {currentName}{isAdmin ? ' (ADMIN)' : ''}
       </div>
     </div>
   );
