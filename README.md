@@ -50,14 +50,27 @@ npm run build
 
 The structures (`MatchEntry`, round timer state, roster, derived leaderboard) are designed so a later shared backend (multi-device sync, real-time, persistent across phones) can be dropped in with minimal UI change.
 
-## Deployment (when ready)
+## Deployment
+
+**Live at:**
+
+- Production: [https://grok-game-night.vercel.app](https://grok-game-night.vercel.app)
+- Vercel project: [https://vercel.com/tomek-group/grok-game-night](https://vercel.com/tomek-group/grok-game-night)
+- GitHub repo connected for automatic deploys on push.
+
+The CLI deployment (using `vercel --yes`) auto-detected Next.js, linked the GitHub repo (https://github.com/1MORLAP/grok-game-night), and set up the `grok-game-night.vercel.app` alias.
+
+### Redeploy / update
 
 ```bash
 npm i -g vercel@latest
-vercel
+cd /Users/tomasz/grok-game-night
+vercel --prod
 ```
 
-Set any required env (none for the local shell).
+Or just push to the `main` branch on GitHub (CI/CD is wired via the connected repo).
+
+No environment variables are required (pure client-side + localStorage app).
 
 ## License / Credit
 
