@@ -72,6 +72,19 @@ Or just push to the `main` branch on GitHub (CI/CD is wired via the connected re
 
 No environment variables are required (pure client-side + localStorage app).
 
+### Vercel Access / OSS Settings (to prevent any blocking)
+
+To ensure the hosted site is fully public and not blocked by Vercel:
+
+1. Go to https://vercel.com/tomek-group/grok-game-night/settings/deployment-protection
+2. Under **Deployment Protection**, turn **off**:
+   - Vercel Authentication (for Production)
+   - Any Password Protection
+3. If your repo is public, consider enabling "This is an open source project" in General settings (for OSS perks).
+4. Production deploys should then be accessible to anyone without Vercel login or password.
+
+The current production alias https://grok-game-night.vercel.app serves the original gated version (name entry required on load).
+
 ## License / Credit
 
 Built for the June 6 game night. Local interactive shell.
